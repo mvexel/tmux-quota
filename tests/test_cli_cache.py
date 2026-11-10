@@ -169,10 +169,20 @@ class CliTests(unittest.TestCase):
 
     def test_reject_invalid_options(self):
         for args in [["--width", "0"], ["--timeout", "nan"], ["--cache-ttl", "-1"],
-                     ["--label", "oops"], ["--max-age", "inf"]]:
+                     ["--label", "oops"], ["--max-age", "inf"],
+                     ["--color", "blue=colour256"], ["--color", "text=#(oops)"],
+                     ["--color", "bg=default"]]:
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                 main(args)
             self.assertEqual(error.exception.code, 2)
+
+    def test_terminal_theme_default_and_safe_color_overrides(self):
+        data = '{"provider":"codex","accounts":[{"number":1,"usage":{"weekly":{"pct":17}}}]}'
+        status, text, _ = self.invoke(["--stdin", "--provider", "codex",
+                                      "--color", "text=#123456", "--color", "track=colour8"], data)
+        self.assertEqual(status, 0)
+        self.assertTrue(text.startswith("#[fg=#123456]"))
+        self.assertIn("#[fg=colour8]", text)
 
     def test_real_cli_process_with_fake_ccswap_and_cached_second_run(self):
         with tempfile.TemporaryDirectory() as directory:

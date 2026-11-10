@@ -5,13 +5,14 @@ from dataclasses import asdict
 import json
 import math
 import os
+import re
 from pathlib import Path
 import sys
 import time
 
 from . import __version__
 from .cache import collect
-from .render import render
+from .render import PALETTES, render
 from .source import PROVIDERS, SourceError, parse_input
 
 
@@ -30,12 +31,27 @@ def label(value: str) -> tuple[str, str]:
     return (f"{provider}:{int(slot)}", text)
 
 
+def color(value: str) -> tuple[str, str]:
+    key, sep, text = value.partition("=")
+    valid = text == "default" or re.fullmatch(r"#[0-9a-fA-F]{6}", text)
+    if re.fullmatch(r"colour\d{1,3}", text):
+        valid = int(text[6:]) <= 255
+    if not sep or key not in PALETTES["terminal"] or not valid:
+        raise argparse.ArgumentTypeError(
+            "expected ROLE=default, ROLE=colour0..255, or ROLE=#RRGGBB; "
+            "roles: green, blue, amber, red, unknown, track, text")
+    return key, text
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="ccswap quota bars and pace colors for tmux")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--provider", choices=("all", *PROVIDERS), default="all")
     p.add_argument("--format", choices=("tmux", "plain", "json"), default="tmux")
-    p.add_argument("--theme", choices=("dark", "light"), default="dark")
+    p.add_argument("--theme", choices=tuple(PALETTES), default="terminal",
+                   help="terminal palette by default; dark/light are opt-in Tokyo Night presets")
+    p.add_argument("--color", type=color, action="append", default=[], metavar="ROLE=COLOR",
+                   help="override a foreground role; repeat for multiple colors")
     p.add_argument("--width", type=int, choices=range(1, 33), default=6, metavar="1..32")
     p.add_argument("--ascii", action="store_true", help="use ASCII bars and separators")
     p.add_argument("--active-only", action="store_true")
@@ -81,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         print(render(accounts, now=now, theme=args.theme, format=args.format,
                      width=args.width, ascii_only=args.ascii, max_age=args.max_age,
                      labels=dict(args.label), active_only=args.active_only,
-                     scoped_providers=providers))
+                     scoped_providers=providers, colors=dict(args.color)))
     if not args.quiet:
         for error in errors:
             print(f"tmux-quota: {error}", file=sys.stderr)

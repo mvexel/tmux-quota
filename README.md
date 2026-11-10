@@ -94,6 +94,27 @@ See [examples/tmux.conf](examples/tmux.conf) for theme and sizing options. A fon
 with Unicode box-drawing characters renders the default thin bars. `--ascii`
 uses `[==----]` bars and `|` separators instead.
 
+## Terminal colors
+
+The default `--theme terminal` uses the terminal's ANSI palette for pace: green
+(slot 2), blue (4), yellow (3), and red (1). Labels, unknown readings, brackets,
+and tracks inherit tmux's configured status style. No background or hex colors
+are forced, and no light/dark background detection is attempted.
+
+ANSI color appearance and contrast depend on your terminal palette. Override any
+role to suit your status line; colors can be `default`, `colour0` through
+`colour255`, or a quoted `#RRGGBB` value:
+
+```sh
+tmux-quota --color blue=colour6 --color track=colour8
+tmux-quota --color 'green=#22aa55' --color text=default
+```
+
+Roles are `green`, `blue`, `amber`, `red`, `unknown`, `track`, and `text`.
+Overrides apply after the selected palette. `default` restores the tmux status
+style. The old `--theme dark` and `--theme light` Tokyo Night palettes remain
+explicit opt-in presets. Plain and JSON output do not use color palettes.
+
 ## Pace colors
 
 | Color | Consumed percentage / elapsed percentage | Halfway through a period |
@@ -106,7 +127,7 @@ uses `[==----]` bars and `|` separators instead.
 
 Each bar is evaluated independently. The filled portion always represents
 consumed quota; it does not represent pace. Colors are applied to the fill and
-percentage. The empty track and brackets stay muted. Unknown pace still shows a
+percentage. The empty track and brackets use the configured track style. Unknown pace still shows a
 readable percentage when its measurement is recent enough to display.
 
 Elapsed time is inferred from the reset timestamp and a fixed 5-hour or 7-day
@@ -132,7 +153,8 @@ Per-model quotas, credit balances, and money spent are outside this release.
 | --- | --- | --- |
 | `--provider all/claude/codex` | `all` | Providers to fetch or render |
 | `--format tmux/plain/json` | `tmux` | Styled tmux text, plain text, or normalized JSON |
-| `--theme dark/light` | `dark` | tmux color palette |
+| `--theme terminal/dark/light` | `terminal` | Inherit terminal colors, or opt into a Tokyo Night preset |
+| `--color ROLE=COLOR` | none | Override a foreground role; repeat for multiple roles |
 | `--width 1..32` | `6` | Cells inside each bar |
 | `--ascii` | off | ASCII bars and separators |
 | `--active-only` | off | Show only the active account per provider |

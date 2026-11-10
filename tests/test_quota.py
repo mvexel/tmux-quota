@@ -179,6 +179,17 @@ class RendererTests(unittest.TestCase):
         self.assertIn("━━━", text)
         self.assertIn("───", text)
 
+    def test_default_uses_terminal_palette_and_inherits_status_style(self):
+        text = render(self.accounts(), now=NOW)
+        self.assertTrue(text.startswith("#[default]"))
+        self.assertIn("#[fg=colour4]", text)
+        self.assertNotRegex(text, r"#[0-9a-fA-F]{6}")
+        self.assertNotIn("bg=", text)
+        self.assertNotIn("fg=default", text)
+        self.assertIn("#[fg=#123456]", render(self.accounts(), now=NOW,
+                                            colors={"blue": "#123456"}))
+        self.assertEqual(PALETTES["terminal"]["blue"], "colour4")
+
 
 if __name__ == "__main__":
     unittest.main()

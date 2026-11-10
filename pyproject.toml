@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tmux-quota"
-version = "0.1.1"
+version = "0.1.2"
 description = "Account quota bars and usage pace for tmux, powered by ccswap"
 readme = "README.md"
 requires-python = ">=3.11"
