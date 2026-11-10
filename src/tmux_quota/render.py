@@ -1,0 +1,60 @@
+"""tmux styling and plain terminal output from the same measurements."""
+
+from .model import Account, Window
+
+PALETTES = {
+    "dark": {"green": "#9ece6a", "blue": "#7aa2f7", "amber": "#e0af68",
+             "red": "#f7768e", "unknown": "#565f89", "text": "#c0caf5"},
+    "light": {"green": "#587539", "blue": "#2e7de9", "amber": "#8c6c3e",
+              "red": "#f52a65", "unknown": "#8990b3", "text": "#343b58"},
+}
+
+
+def safe_label(value: str) -> str:
+    # '#' introduces tmux formats/styles/commands; strip it from untrusted labels.
+    return "".join(c for c in value if c.isprintable() and c != "#")[:24] or "?"
+
+
+def bar(window: Window, now: float, max_age: float, width: int,
+        ascii_only: bool, palette: dict[str, str] | None) -> str:
+    known = window.available(now, max_age)
+    pct = window.consumed if known else None
+    filled = int(pct * width / 100 + 0.5) if pct is not None else 0
+    full, empty = ("=", "-") if ascii_only else ("█", "░")
+    percent = f"{pct:.0f}%" if pct is not None else "?"
+    if palette is None:
+        return full * filled + empty * (width - filled) + " " + percent
+    color = palette[window.pace(now, max_age)]
+    return (f"#[fg={color}]" + full * filled + f"#[fg={palette['unknown']}]" +
+            empty * (width - filled) + f"#[fg={color}] {percent}" +
+            f"#[fg={palette['text']}]")
+
+
+def render(accounts: list[Account], *, now: float, theme: str = "dark",
+           format: str = "tmux", width: int = 6, ascii_only: bool = False,
+           max_age: float = 600, labels: dict[str, str] | None = None,
+           active_only: bool = False, scoped_providers: tuple[str, ...] = ()) -> str:
+    palette = PALETTES[theme] if format == "tmux" else None
+    groups = []
+    for provider in ("claude", "codex"):
+        segments = []
+        for account in accounts:
+            if account.provider != provider or (active_only and not account.active):
+                continue
+            label = (labels or {}).get(f"{provider}:{account.number}", account.label)
+            unavailable = not account.windows or any(
+                w.last_known or not w.available(now, max_age) for w in account.windows
+            )
+            marker = ("*" if account.active else "") + ("~" if unavailable else "")
+            windows = " ".join(
+                w.label + " " + bar(w, now, max_age, width, ascii_only, palette)
+                for w in account.windows
+            ) or "?"
+            segments.append(marker + safe_label(label) + " " + windows)
+        if segments:
+            groups.append(provider.title() + " " + " / ".join(segments))
+        elif provider in scoped_providers:
+            groups.append(provider.title() + " ?")
+    separator = " | " if ascii_only else " │ "
+    text = separator.join(groups)
+    return f"#[fg={palette['text']}]" + text + "#[default]" if palette and text else text

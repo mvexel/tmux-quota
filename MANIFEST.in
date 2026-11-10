@@ -1,0 +1,4 @@
+include CONTRIBUTING.md
+recursive-include examples *.conf
+recursive-include tests *.py *.json
+recursive-include .github/workflows *.yml
