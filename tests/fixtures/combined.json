@@ -1,21 +1,36 @@
 {
   "claude": {
     "schemaVersion": 1,
-    "activeAccountNumber": 1,
+    "activeAccountNumber": 7,
     "accounts": [
       {
-        "number": 1, "alias": "team", "active": true,
-        "usageStatus": "ok", "usageAgeSeconds": 20,
+        "number": 7,
+        "alias": "work",
+        "active": true,
+        "usageStatus": "ok",
+        "usageAgeSeconds": 20,
         "usage": {
-          "fiveHour": {"pct": 11, "resetsAt": "2027-01-16T10:30:00Z"},
-          "sevenDay": {"pct": 54, "resetsAt": "2027-01-19T20:00:00Z"}
+          "fiveHour": {
+            "pct": 25,
+            "resetsAt": "2027-01-16T10:30:00Z"
+          },
+          "sevenDay": {
+            "pct": 60,
+            "resetsAt": "2027-01-19T20:00:00Z"
+          }
         }
       },
       {
-        "number": 2, "alias": "personal", "active": false,
-        "usageStatus": "ok", "usageAgeSeconds": 45,
+        "number": 12,
+        "alias": "home",
+        "active": false,
+        "usageStatus": "ok",
+        "usageAgeSeconds": 45,
         "usage": {
-          "sevenDay": {"pct": 47, "resetsAt": "2027-01-20T20:00:00Z"}
+          "sevenDay": {
+            "pct": 35,
+            "resetsAt": "2027-01-20T20:00:00Z"
+          }
         }
       }
     ]
@@ -24,9 +39,15 @@
     "provider": "codex",
     "accounts": [
       {
-        "number": 1, "active": true, "error": null, "status": null,
+        "number": 4,
+        "active": true,
+        "error": null,
+        "status": null,
         "usage": {
-          "weekly": {"pct": 17, "resets_at": "2027-01-18T20:00:00Z"}
+          "weekly": {
+            "pct": 20,
+            "resets_at": "2027-01-18T20:00:00Z"
+          }
         }
       }
     ]

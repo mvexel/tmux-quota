@@ -67,7 +67,7 @@ def read_cache(path: Path, provider: str) -> dict:
                     return {}
                 windows.append(Window(**w))
             accounts.append(Account(provider, str(row["number"]), row["label"],
-                                    row["active"] is True, tuple(windows)))
+                                    row["active"] is True, tuple(windows), row.get("identity")))
         data["parsed"] = accounts
         return data
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
@@ -88,11 +88,32 @@ def write_cache(path: Path, data: dict) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def usage_error(accounts: list[Account]) -> str | None:
+    slots = [a.number for a in accounts if not a.windows or any(w.last_known for w in a.windows)]
+    return "usage unavailable for account " + ", ".join(slots) if slots else None
+
+
+def retain_usage(accounts: list[Account], previous: list[Account]) -> list[Account]:
+    """A successful CLI exit can still contain per-account quota failures."""
+    old = {a.number: a for a in previous}
+    result = []
+    for account in accounts:
+        missing = not account.windows or all(w.observed_at is None for w in account.windows)
+        previous = old.get(account.number)
+        if (missing and previous is not None and previous.windows and
+                account.identity is not None and account.identity == previous.identity):
+            windows = tuple(replace(w, last_known=True) for w in previous.windows)
+            # Use the new active-account flag; only retain the measurements.
+            account = replace(account, windows=windows)
+        result.append(account)
+    return result
+
+
 def cached_fetch(provider: str, executable: str, timeout: float, cache_dir: Path,
                  ttl: float) -> Result:
     # Keep distinct ccswap installations and account-home overrides independent.
     scope = {k: v for k, v in os.environ.items()
-             if k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME") or
+             if k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_DATA_HOME") or
              k.startswith(("CCSWAP_", "CSWAP_"))}
     scope["executable"] = shutil.which(executable) or executable
     key = hashlib.sha256(json.dumps(scope, sort_keys=True).encode()).hexdigest()[:16]
@@ -111,7 +132,8 @@ def cached_fetch(provider: str, executable: str, timeout: float, cache_dir: Path
             return Result(saved["parsed"], saved.get("error"))
         try:
             accounts = fetch(provider, executable, timeout)
-            error = None
+            error = usage_error(accounts)
+            accounts = retain_usage(accounts, saved.get("parsed", []))
         except SourceError as exc:
             accounts = [replace(a, windows=tuple(replace(w, last_known=True) for w in a.windows))
                         for a in saved.get("parsed", [])]
@@ -127,7 +149,8 @@ def collect(providers: tuple[str, ...], executable: str, timeout: float,
         try:
             if cache_dir is not None:
                 return cached_fetch(provider, executable, timeout, cache_dir, ttl)
-            return Result(fetch(provider, executable, timeout))
+            accounts = fetch(provider, executable, timeout)
+            return Result(accounts, usage_error(accounts))
         except (SourceError, OSError) as exc:
             return Result([], str(exc))
 

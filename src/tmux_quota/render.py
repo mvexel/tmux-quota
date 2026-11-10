@@ -4,9 +4,9 @@ from .model import Account, Window
 
 PALETTES = {
     "dark": {"green": "#9ece6a", "blue": "#7aa2f7", "amber": "#e0af68",
-             "red": "#f7768e", "unknown": "#565f89", "text": "#c0caf5"},
+             "red": "#f7768e", "unknown": "#737da8", "track": "#565f89", "text": "#c0caf5"},
     "light": {"green": "#587539", "blue": "#2e7de9", "amber": "#8c6c3e",
-              "red": "#f52a65", "unknown": "#8990b3", "text": "#343b58"},
+              "red": "#f52a65", "unknown": "#8990b3", "track": "#8990b3", "text": "#343b58"},
 }
 
 
@@ -20,13 +20,17 @@ def bar(window: Window, now: float, max_age: float, width: int,
     known = window.available(now, max_age)
     pct = window.consumed if known else None
     filled = int(pct * width / 100 + 0.5) if pct is not None else 0
-    full, empty = ("=", "-") if ascii_only else ("█", "░")
+    # Thin lines avoid terminal-specific full-cell shading of block glyphs.
+    full, empty = ("=", "-") if ascii_only else ("━", "─")
     percent = f"{pct:.0f}%" if pct is not None else "?"
     if palette is None:
-        return full * filled + empty * (width - filled) + " " + percent
-    color = palette[window.pace(now, max_age)]
-    return (f"#[fg={color}]" + full * filled + f"#[fg={palette['unknown']}]" +
-            empty * (width - filled) + f"#[fg={color}] {percent}" +
+        return "[" + full * filled + empty * (width - filled) + "] " + percent
+    pace = window.pace(now, max_age)
+    color = palette[pace]
+    percent_color = palette["text"] if pace == "unknown" else color
+    return (f"#[fg={palette['track']}]" + "[" + f"#[fg={color}]" + full * filled +
+            f"#[fg={palette['track']}]" + empty * (width - filled) + "]" +
+            f"#[fg={percent_color}] {percent}" +
             f"#[fg={palette['text']}]")
 
 
@@ -37,24 +41,33 @@ def render(accounts: list[Account], *, now: float, theme: str = "dark",
     palette = PALETTES[theme] if format == "tmux" else None
     groups = []
     for provider in ("claude", "codex"):
+        members = [a for a in accounts if a.provider == provider and
+                   (not active_only or a.active)]
+        compact = (len(members) == 1 and members[0].label == members[0].number and
+                   f"{provider}:{members[0].number}" not in (labels or {}))
+        title = provider.title()
         segments = []
-        for account in accounts:
-            if account.provider != provider or (active_only and not account.active):
-                continue
+        for account in members:
             label = (labels or {}).get(f"{provider}:{account.number}", account.label)
             unavailable = not account.windows or any(
                 w.last_known or not w.available(now, max_age) for w in account.windows
             )
-            marker = ("*" if account.active else "") + ("~" if unavailable else "")
+            marker = ("*" if account.active else "") + ("~" if unavailable and account.windows else "")
             windows = " ".join(
                 w.label + " " + bar(w, now, max_age, width, ascii_only, palette)
                 for w in account.windows
-            ) or "?"
-            segments.append(marker + safe_label(label) + " " + windows)
+            ) or "unavailable"
+            if compact:
+                title += marker
+                segments.append(windows)
+            else:
+                segments.append(safe_label(label) + marker + " " + windows)
         if segments:
-            groups.append(provider.title() + " " + " / ".join(segments))
+            groups.append(title + " " + " / ".join(segments))
         elif provider in scoped_providers:
-            groups.append(provider.title() + " ?")
+            has_accounts = any(a.provider == provider for a in accounts)
+            status = "no active account" if active_only and has_accounts else "unavailable"
+            groups.append(provider.title() + " " + status)
     separator = " | " if ascii_only else " │ "
     text = separator.join(groups)
     return f"#[fg={palette['text']}]" + text + "#[default]" if palette and text else text

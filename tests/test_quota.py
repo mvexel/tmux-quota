@@ -72,7 +72,7 @@ class AdapterTests(unittest.TestCase):
         a = parse(data, "claude", NOW)[0]
         self.assertEqual(a.windows[0].pace(NOW), "unknown")
         self.assertTrue(a.windows[0].available(NOW, 600))
-        self.assertIn("~1", render([a], now=NOW, format="plain"))
+        self.assertIn("Claude~", render([a], now=NOW, format="plain"))
 
     def test_codex_raw_usage_schema_and_error(self):
         data = {"provider": "codex", "accounts": [{"number": 1, "active": True,
@@ -88,7 +88,7 @@ class AdapterTests(unittest.TestCase):
     def test_codex_metadata_list_is_not_mistaken_for_quota(self):
         a = parse({"accounts": [{"number": 1, "label": "Codex Pro"}]}, "codex", NOW)[0]
         self.assertEqual(a.windows, ())
-        self.assertIn("Codex ~1 ?", render([a], now=NOW, format="plain"))
+        self.assertIn("Codex unavailable", render([a], now=NOW, format="plain"))
 
     def test_empty_missing_and_unknown_fields(self):
         self.assertEqual(parse({"accounts": [], "future": True}, "claude", NOW), [])
@@ -112,6 +112,26 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(len(parse_input(data, ("codex",), NOW)), 1)
         self.assertEqual(len(parse_input(data["codex"], ("codex",), NOW)), 1)
 
+    def test_arbitrary_accounts_and_sparse_slots_without_plan_assumptions(self):
+        data = {"activeAccountNumber": 42, "accounts": [
+            {"number": slot, "usageAgeSeconds": 0, "usage": {
+                "fiveHour": {"pct": 25, "resetsAt": iso(NOW + 9000)}}}
+            for slot in (7, 12, 42, 99)
+        ]}
+        accounts = parse(data, "claude", NOW)
+        self.assertEqual([a.number for a in accounts], ["7", "12", "42", "99"])
+        self.assertEqual([a.number for a in accounts if a.active], ["42"])
+        self.assertTrue(all([w.label for w in a.windows] == ["5h"] for a in accounts))
+
+    def test_account_identity_is_opaque_and_distinguishes_organizations(self):
+        data = {"accounts": [{"number": 7, "email": "reader@example.test",
+                              "organizationUuid": "fictional-org-a"}]}
+        first = parse(data, "claude", NOW)[0]
+        self.assertNotIn("reader", first.identity)
+        self.assertEqual(first.label, "7")
+        data["accounts"][0]["organizationUuid"] = "fictional-org-b"
+        self.assertNotEqual(first.identity, parse(data, "claude", NOW)[0].identity)
+
 
 class RendererTests(unittest.TestCase):
     def accounts(self, pct=50):
@@ -129,8 +149,8 @@ class RendererTests(unittest.TestCase):
                 self.assertEqual(re.sub(r"#\[[^]]*\]", "", styled), plain)
 
     def test_zero_full_ascii_and_width(self):
-        self.assertIn("------ 0%", render(self.accounts(0), now=NOW, format="plain", ascii_only=True))
-        self.assertIn("==== 100%", render(self.accounts(100), now=NOW, format="plain", ascii_only=True, width=4))
+        self.assertIn("[------] 0%", render(self.accounts(0), now=NOW, format="plain", ascii_only=True))
+        self.assertIn("[====] 100%", render(self.accounts(100), now=NOW, format="plain", ascii_only=True, width=4))
 
     def test_untrusted_labels_cannot_inject_tmux_formats(self):
         text = render(self.accounts(), now=NOW, labels={"claude:1": "#[fg=red]#(touch /tmp/no)\n\x1b"})
@@ -142,8 +162,22 @@ class RendererTests(unittest.TestCase):
     def test_unknown_ages_active_filter_and_failed_provider(self):
         a = self.accounts()
         text = render(a, now=NOW + 601, format="plain", scoped_providers=("claude", "codex"))
-        self.assertEqual(text, "Claude *~work W ░░░░░░ ? │ Codex ?")
+        self.assertEqual(text, "Claude work*~ W [──────] ? │ Codex unavailable")
         self.assertEqual(render([replace(a[0], active=False)], now=NOW, active_only=True), "")
+
+    def test_no_active_account_is_not_a_source_failure(self):
+        text = render([replace(self.accounts()[0], active=False)], now=NOW,
+                      active_only=True, format="plain", scoped_providers=("claude",))
+        self.assertEqual(text, "Claude no active account")
+
+    def test_thin_bar_has_visible_track_and_no_shaded_blocks(self):
+        text = render(self.accounts(), now=NOW)
+        self.assertNotIn("█", text)
+        self.assertNotIn("░", text)
+        self.assertIn("[", text)
+        self.assertIn("]", text)
+        self.assertIn("━━━", text)
+        self.assertIn("───", text)
 
 
 if __name__ == "__main__":

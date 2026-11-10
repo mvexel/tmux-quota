@@ -1,5 +1,8 @@
 """Adapters for ccswap 0.47's public CLI JSON (no private Python imports)."""
 
+import hashlib
+import json
+
 from .model import Account, Window, number, timestamp
 
 PROVIDERS = ("claude", "codex")
@@ -73,7 +76,14 @@ def parse(payload: object, provider: str, collected_at: float) -> list[Account]:
         active = row.get("active") is True or (
             "active" not in row and str(data.get("activeAccountNumber")) == slot
         )
-        accounts.append(Account(provider, slot, label, active, tuple(windows)))
+        # A slot can be moved or reused. An opaque ownership tag prevents fallback
+        # measurements crossing logins, without persisting raw email/organization.
+        email = row.get("email")
+        identity = None
+        if isinstance(email, str) and email:
+            owner = json.dumps([provider, email, row.get("organizationUuid", "")])
+            identity = hashlib.sha256(owner.encode()).hexdigest()
+        accounts.append(Account(provider, slot, label, active, tuple(windows), identity))
     return accounts
 
 

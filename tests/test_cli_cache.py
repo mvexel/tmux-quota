@@ -1,5 +1,5 @@
 from contextlib import redirect_stdout, redirect_stderr
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import fcntl
 import io
 import json
@@ -24,7 +24,7 @@ class CacheTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
         self.account = Account("codex", "1", "1", True, (
-            Window("W", 17, 604800, time.time() + 300000, time.time()),))
+            Window("W", 17, 604800, time.time() + 300000, time.time()),), "test-owner")
 
     def test_cache_throttles_calls_and_preserves_observation_time(self):
         with patch("tmux_quota.cache.fetch", return_value=[self.account]) as source:
@@ -72,6 +72,47 @@ class CacheTests(unittest.TestCase):
         with patch("tmux_quota.cache.fetch", return_value=[self.account]) as source:
             for home in ("/first", "/second"):
                 with patch.dict(os.environ, {"CODEX_HOME": home}):
+                    cached_fetch("codex", "ccswap", 1, self.directory, 60)
+        self.assertEqual(source.call_count, 2)
+
+    def test_exit_zero_account_failure_retains_usage_and_new_active_flag(self):
+        with patch("tmux_quota.cache.fetch", return_value=[self.account]):
+            cached_fetch("codex", "ccswap", 1, self.directory, 60)
+        unavailable = replace(self.account, active=False, windows=())
+        with patch("tmux_quota.cache.fetch", return_value=[unavailable]):
+            result = cached_fetch("codex", "ccswap", 1, self.directory, 0)
+        account = result.accounts[0]
+        self.assertFalse(account.active)
+        self.assertEqual(account.windows[0].observed_at, self.account.windows[0].observed_at)
+        self.assertEqual(account.windows[0].consumed, 17)
+        self.assertTrue(account.windows[0].last_known)
+        self.assertEqual(result.error, "usage unavailable for account 1")
+        with patch("tmux_quota.cache.fetch", return_value=[self.account]):
+            recovered = cached_fetch("codex", "ccswap", 1, self.directory, 0)
+        self.assertIsNone(recovered.error)
+        self.assertFalse(recovered.accounts[0].windows[0].last_known)
+
+    def test_missing_new_account_does_not_inherit_another_accounts_usage(self):
+        with patch("tmux_quota.cache.fetch", return_value=[self.account]):
+            cached_fetch("codex", "ccswap", 1, self.directory, 60)
+        different = replace(self.account, number="9", windows=())
+        with patch("tmux_quota.cache.fetch", return_value=[different]):
+            result = cached_fetch("codex", "ccswap", 1, self.directory, 0)
+        self.assertEqual(result.accounts, [different])
+
+    def test_reused_slot_does_not_inherit_another_logins_measurements(self):
+        with patch("tmux_quota.cache.fetch", return_value=[self.account]):
+            cached_fetch("codex", "ccswap", 1, self.directory, 60)
+        for identity in ("different-owner", None):
+            different = replace(self.account, identity=identity, windows=())
+            with patch("tmux_quota.cache.fetch", return_value=[different]):
+                result = cached_fetch("codex", "ccswap", 1, self.directory, 0)
+            self.assertEqual(result.accounts[0].windows, ())
+
+    def test_xdg_data_homes_get_distinct_caches(self):
+        with patch("tmux_quota.cache.fetch", return_value=[self.account]) as source:
+            for home in ("/first", "/second"):
+                with patch.dict(os.environ, {"XDG_DATA_HOME": home}):
                     cached_fetch("codex", "ccswap", 1, self.directory, 60)
         self.assertEqual(source.call_count, 2)
 
@@ -123,7 +164,7 @@ class CliTests(unittest.TestCase):
     def test_invalid_stdin_and_quiet_failure(self):
         status, out, err = self.invoke(["--stdin", "--format", "plain", "--quiet"], "[]")
         self.assertEqual(status, 1)
-        self.assertEqual(out.strip(), "Claude ? │ Codex ?")
+        self.assertEqual(out.strip(), "Claude unavailable │ Codex unavailable")
         self.assertEqual(err, "")
 
     def test_reject_invalid_options(self):
@@ -159,7 +200,7 @@ print(json.dumps(data))
                        "--cache-dir", str(root / "cache"), "--format", "plain"]
             for _ in range(2):
                 result = subprocess.run(command, text=True, capture_output=True, check=True)
-                self.assertEqual(result.stdout.strip(), "Claude *team W ███░░░ 54% │ Codex *1 W █░░░░░ 17%")
+                self.assertEqual(result.stdout.strip(), "Claude team* W [━━━───] 54% │ Codex* W [━─────] 17%")
             self.assertCountEqual(counter.read_text().splitlines(),
                                   ["list --provider claude --json", "codex usage --json"])
 

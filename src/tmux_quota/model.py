@@ -73,3 +73,4 @@ class Account:
     label: str
     active: bool
     windows: tuple[Window, ...]
+    identity: str | None = None

@@ -26,7 +26,7 @@ def label(value: str) -> tuple[str, str]:
     key, sep, text = value.partition("=")
     provider, colon, slot = key.partition(":")
     if not sep or not text.strip() or not colon or provider not in PROVIDERS or not slot.isdigit():
-        raise argparse.ArgumentTypeError("expected claude:1=personal or codex:1=work")
+        raise argparse.ArgumentTypeError("expected claude:7=work or codex:4=lab")
     return (f"{provider}:{int(slot)}", text)
 
 
@@ -70,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         rows = []
         for account in accounts:
             row = asdict(account)
+            row.pop("identity", None)  # Cache ownership tags are not public output.
             row["label"] = dict(args.label).get(f"{account.provider}:{account.number}", account.label)
             for raw, window in zip(row["windows"], account.windows):
                 raw["pace"] = window.pace(now, args.max_age)
