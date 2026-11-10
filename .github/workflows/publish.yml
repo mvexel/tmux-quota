@@ -1,0 +1,160 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (must match pyproject.toml)
+        required: true
+        type: string
+  # An explicit release commit lets the initial publisher run without a
+  # pre-existing tag/release. Ordinary commits only run the normal CI workflow.
+  push:
+    branches: [main]
+    paths: [pyproject.toml, .github/workflows/publish.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-publish
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    if: >-
+      github.event_name != 'push' ||
+      startsWith(github.event.head_commit.message, 'Release v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate version and release trigger
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          tag = "v" + version
+          event = os.environ["EVENT"]
+          if event == "release":
+              assert os.environ["RELEASE_TAG"] == tag, "Release tag must match package version"
+          elif event == "workflow_dispatch":
+              assert os.environ["GITHUB_REF"] == "refs/heads/main", "Dispatch releases from main"
+              assert os.environ["REQUESTED_VERSION"] == version, "Requested version must match package"
+          else:
+              assert os.environ["COMMIT_MESSAGE"].splitlines()[0] == "Release " + tag
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\ntag={tag}\n")
+          PY
+
+  test:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.14']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install .
+      - run: python -m unittest discover -s tests -v
+      - run: tmux-quota --version
+
+  build:
+    needs: [metadata, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [metadata, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tmux-quota/${{ needs.metadata.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - name: Publish distributions with PyPI Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  verify:
+    needs: [metadata, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install from PyPI in a fresh environment
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          python -m venv "$RUNNER_TEMP/pypi-check"
+          for attempt in 1 2 3 4 5 6; do
+            if "$RUNNER_TEMP/pypi-check/bin/python" -m pip install \
+              --no-cache-dir --index-url https://pypi.org/simple "tmux-quota==$VERSION"; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            sleep 15
+          done
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/pypi-check/bin/tmux-quota" --version
+          "$RUNNER_TEMP/pypi-check/bin/python" -I -c \
+            'import os, importlib.metadata as m; assert m.version("tmux-quota") == os.environ["VERSION"]'
+
+  github-release:
+    needs: [metadata, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - name: Create GitHub release after PyPI verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
+              --notes "CLI-only quota bars and pace colors for tmux. Install with: uv tool install tmux-quota" \
+              dist/*
+          fi

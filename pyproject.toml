@@ -25,6 +25,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/mvexel/tmux-quota"
+Repository = "https://github.com/mvexel/tmux-quota"
+Issues = "https://github.com/mvexel/tmux-quota/issues"
+
 [project.scripts]
 tmux-quota = "tmux_quota.cli:main"
 

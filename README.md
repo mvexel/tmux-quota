@@ -19,9 +19,9 @@ shown; a missing 5-hour window never becomes an invented 0% bar.
 - `unavailable` means an account/provider has no quota windows to display.
 - A single account without a custom label is abbreviated, for example `Codex*`.
 
-This is an initial alpha targeting ccswap **0.47.0**. Tests use synthetic fixtures
-and a fake CLI. Local checks exercised live error responses on macOS; successful
-authenticated end-to-end fetching and the Linux CI matrix still need validation.
+This is an initial alpha targeting ccswap **0.47.0**. CI and the release workflow
+test on Linux and macOS using synthetic fixtures and a fake CLI. Successful
+authenticated provider fetching is not covered by those automated tests.
 Windows is not supported (the cache uses POSIX file locks).
 
 ## Install
@@ -29,18 +29,18 @@ Windows is not supported (the cache uses POSIX file locks).
 Requires Python 3.11+, tmux, and the ccswap CLI. ccswap itself requires Python
 3.12+. No desktop app, CodexBar, jq, or background service is needed.
 
-From a checkout, using [uv](https://docs.astral.sh/uv/):
+Using [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv tool install --python 3.13 ccswap==0.47.0
-uv tool install --python 3.13 .
+uv tool install --python 3.13 tmux-quota
 tmux-quota --version
 ```
 
-Alternatively, install ccswap separately and run `pipx install .` with a compatible
-Python interpreter. tmux-quota is not yet published to PyPI. ccswap is an external
-executable, not a Python library dependency; it is not installed or upgraded by
-installing tmux-quota.
+Alternatively, use `pipx install tmux-quota` with a compatible Python interpreter.
+To install from a source checkout, run `uv tool install --python 3.13 .`. ccswap is
+an external executable, not a Python library dependency; it is not installed or
+upgraded by installing tmux-quota.
 
 Follow ccswap's [account setup](https://github.com/errhythm/ccswap#quick-start).
 With accounts already registered, verify its two usage commands in your terminal:
@@ -274,7 +274,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 Use a Python 3.11+ interpreter. The package has no runtime Python dependencies;
 packaging uses setuptools. Tests need no live accounts, credentials, or network.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for packaging and contribution instructions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution instructions and
+[RELEASING.md](RELEASING.md) for the Trusted Publishing workflow.
 
 ## License
 
