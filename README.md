@@ -1,33 +1,27 @@
 # tmux-quota
 
 Account-budget bars for tmux, powered by [ccswap](https://github.com/errhythm/ccswap).
-Bars show **quota consumed**; colors show consumption relative to elapsed time.
+The bars show quota consumed per account, and per window if your account has more than one - for example many Claude accounts have 5h and 7d usage windows. The colors show consumption relative to elapsed time, giving a visual hint
 Runs on Linux and macOS with command-line tools only.
 
-```text
-Claude work* 5h [━━────] 25% W [━━━━──] 60% / home W [━━────] 35% │ Codex* W [━─────] 20%
-```
+![screenshot of tmux status bar](/assets/bar.png)
 
-The example is fictional. There are no built-in work/personal account mappings,
-slot numbers, email addresses, or plan-specific rules. Configure as many accounts
-as you need in ccswap. Only the 5-hour and weekly windows it actually reports are
-shown; a missing 5-hour window never becomes an invented 0% bar.
+Configure your accounts in `ccswap`. This script does not know anything about accounts, it just parses what `cswap list --json` returns.
 
-- `*` after an account label marks the active login **within that provider**.
+- `*` after an account label marks the active login within that provider.
 - `~` means the account has last-known, stale, or unavailable measurements.
 - `?` inside a bar means that particular measurement is unknown or expired.
 - `unavailable` means an account/provider has no quota windows to display.
-- A single account without a custom label is abbreviated, for example `Codex*`.
 
-This is an initial alpha targeting ccswap **0.47.0**. CI and the release workflow
+This is beta software targeting `ccswap` 0.47.0. CI and the release workflow
 test on Linux and macOS using synthetic fixtures and a fake CLI. Successful
 authenticated provider fetching is not covered by those automated tests.
 Windows is not supported (the cache uses POSIX file locks).
 
 ## Install
 
-Requires Python 3.11+, tmux, and the ccswap CLI. ccswap itself requires Python
-3.12+. No desktop app, CodexBar, jq, or background service is needed.
+Requires Python 3.11+, `tmux`, and the `ccswap` CLI. `ccswap` itself requires Python
+3.12+.
 
 Using [uv](https://docs.astral.sh/uv/):
 
@@ -52,10 +46,8 @@ tmux-quota --format plain
 ```
 
 For a single provider, use `tmux-quota --provider claude` or `--provider codex`.
-This tool never runs login, add, switch, auto, or reset commands. ccswap owns
-credentials and can refresh them during usage collection according to its own
-behavior. Migrating from another account manager is a separate task; consult
-ccswap's documentation before letting two managers operate on the same store.
+This tool knows nothing about your accounts, does not read configs, or write anything. `ccswap` owns
+credentials and can refresh them during usage collection according to its own behavior.
 
 To upgrade a local installation after pulling changes, run:
 
@@ -81,14 +73,9 @@ set -g status-right-length 240
 set -g status-right '#(~/.local/bin/tmux-quota --ccswap ~/.local/bin/ccswap --quiet)'
 ```
 
-To keep existing widgets, insert the `#(...)` segment into your existing
+To keep any existing statusbar items, insert the `#(...)` segment into your existing
 `status-right` value with a separator. The explicit ccswap path handles tmux
-servers whose PATH differs from the interactive shell. The configuration can be
-reloaded without appending duplicate segments:
-
-```sh
-tmux source-file ~/.tmux.conf
-```
+servers whose PATH differs from the interactive shell.
 
 See [examples/tmux.conf](examples/tmux.conf) for theme and sizing options. A font
 with Unicode box-drawing characters renders the default thin bars. `--ascii`
@@ -117,16 +104,16 @@ explicit opt-in presets. Plain and JSON output do not use color palettes.
 
 ## Pace colors
 
-| Color | Consumed percentage / elapsed percentage | Halfway through a period |
-| --- | --- | --- |
-| Green | ≤0.8× | ≤40% consumed |
-| Blue | >0.8× to 1.1× | >40–55% consumed |
-| Amber | >1.1× to 1.4× | >55–70% consumed |
-| Red | >1.4×, or 100% consumed | >70% consumed |
-| Neutral | Missing reset time, untrusted reading, or stale data | No pace judgment |
+| Color   | Consumed percentage / elapsed percentage             | Halfway through a period |
+| ------- | ---------------------------------------------------- | ------------------------ |
+| Green   | ≤0.8×                                                | ≤40% consumed            |
+| Blue    | >0.8× to 1.1×                                        | >40–55% consumed         |
+| Amber   | >1.1× to 1.4×                                        | >55–70% consumed         |
+| Red     | >1.4×, or 100% consumed                              | >70% consumed            |
+| Neutral | Missing reset time, untrusted reading, or stale data | No pace judgment         |
 
 Each bar is evaluated independently. The filled portion always represents
-consumed quota; it does not represent pace. Colors are applied to the fill and
+consumed quota. Colors are applied to the fill and
 percentage. The empty track and brackets use the configured track style. Unknown pace still shows a
 readable percentage when its measurement is recent enough to display.
 
@@ -149,26 +136,26 @@ Per-model quotas, credit balances, and money spent are outside this release.
 
 ## Options
 
-| Option | Default | Purpose |
-| --- | --- | --- |
-| `--provider all/claude/codex` | `all` | Providers to fetch or render |
-| `--format tmux/plain/json` | `tmux` | Styled tmux text, plain text, or normalized JSON |
+| Option                        | Default    | Purpose                                                   |
+| ----------------------------- | ---------- | --------------------------------------------------------- |
+| `--provider all/claude/codex` | `all`      | Providers to fetch or render                              |
+| `--format tmux/plain/json`    | `tmux`     | Styled tmux text, plain text, or normalized JSON          |
 | `--theme terminal/dark/light` | `terminal` | Inherit terminal colors, or opt into a Tokyo Night preset |
-| `--color ROLE=COLOR` | none | Override a foreground role; repeat for multiple roles |
-| `--width 1..32` | `6` | Cells inside each bar |
-| `--ascii` | off | ASCII bars and separators |
-| `--active-only` | off | Show only the active account per provider |
-| `--label PROVIDER:SLOT=NAME` | none | Override a label; repeat for multiple accounts |
-| `--ccswap PATH` | `ccswap` | Executable path, not a shell command |
-| `--timeout SECONDS` | `20` | Maximum runtime per provider command |
-| `--cache-ttl SECONDS` | `60` | Minimum interval between fetch attempts |
-| `--max-age SECONDS` | `600` | Maximum measurement age for displayed percentages |
-| `--cache-dir PATH` | see below | Cache directory |
-| `--no-cache` | off | Fetch each invocation without reading/writing cache |
-| `--stdin` | off | Read source JSON without fetching or caching |
-| `--quiet` | off | Suppress diagnostics on stderr |
-| `--version` | | Show version |
-| `--help` | | Show CLI help |
+| `--color ROLE=COLOR`          | none       | Override a foreground role; repeat for multiple roles     |
+| `--width 1..32`               | `6`        | Cells inside each bar                                     |
+| `--ascii`                     | off        | ASCII bars and separators                                 |
+| `--active-only`               | off        | Show only the active account per provider                 |
+| `--label PROVIDER:SLOT=NAME`  | none       | Override a label; repeat for multiple accounts            |
+| `--ccswap PATH`               | `ccswap`   | Executable path, not a shell command                      |
+| `--timeout SECONDS`           | `20`       | Maximum runtime per provider command                      |
+| `--cache-ttl SECONDS`         | `60`       | Minimum interval between fetch attempts                   |
+| `--max-age SECONDS`           | `600`      | Maximum measurement age for displayed percentages         |
+| `--cache-dir PATH`            | see below  | Cache directory                                           |
+| `--no-cache`                  | off        | Fetch each invocation without reading/writing cache       |
+| `--stdin`                     | off        | Read source JSON without fetching or caching              |
+| `--quiet`                     | off        | Suppress diagnostics on stderr                            |
+| `--version`                   |            | Show version                                              |
+| `--help`                      |            | Show CLI help                                             |
 
 Example label overrides (replace slots with your actual ccswap numbers):
 
